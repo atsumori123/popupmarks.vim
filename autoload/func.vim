@@ -21,38 +21,25 @@ function! s:GetFuncName_C()
 			continue
 		endif
 
-		" -------------------------------
-		" 関数定義パターン（関数呼び出しは除外）
-		" -------------------------------
-		" 条件:
-		" 1. 行頭に戻り値（複数単語可）
-		" 2. 関数名 (\k\+)
-		" 3. 引数 (...)
-		" 4. 行末が ; で終わらない（呼び出しは ; で終わる）
-		let pat = '^\s*\(\k\+\s\+\)*\(\k\+\)\s*(.*)\s*\({\s*\)\?$'
-		let m = matchlist(s, pat)
-		if !empty(m)
-			" m[2] が関数名
-			return m[2]
+		" 行頭に空白またはタブがある場合はスキップ
+		if s =~ '^[ \t]'
+			let lnum -= 1
+			continue
 		endif
 
-		" -------------------------------
-		" 戻り値と関数名が別行にあるパターン
-		"	void
-		"	sub3() {
-		" -------------------------------
-		if s =~ '^\s*\k\+\s*$'
-			let next = getline(lnum + 1)
-			let next2 = substitute(next, '//.*$', '', '')
-			let next2 = substitute(next2, '/\*.*\*/', '', '')
-
-			if next2 =~ '^\s*\(\k\+\)\s*(.*)'
-				let m2 = matchlist(next2, '^\s*\(\k\+\)\s*(.*)')
-				return m2[1]
-			endif
+		" 先頭の文字がアルファベットでない場合はスキップ
+		if !(s =~ '^[a-zA-Z]')
+			let lnum -= 1
+			continue
 		endif
 
-		let lnum -= 1
+		" (よりも前の文字列を抽出
+		let function = matchstr(line, '^[^(]*')
+
+		" 最後から空白またはタブ文字が出てくるまでの文字列を抽出
+		let function = matchstr(function, '[^ \t]*$')
+
+		return function
 	endwhile
 
 	return 'unknown'

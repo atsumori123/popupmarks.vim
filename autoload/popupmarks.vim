@@ -122,20 +122,22 @@ function! popupmarks#open() abort
 	let lines = s:BuildLines()
 
 	let opts = {
-		\ 'title': ' Marks  (Enter:Jump, a:add, d:delete) ',
+		\ 'title': ' Marks  (Enter:Jump, a:add, d:delete, e:edit) ',
 		\ 'border': [],
 		\ 'borderchars': ['─','│','─','│','┌','┐','┘','└'],
 		\ 'padding': [0,1,0,1],
 		\ 'minwidth':&columns - 20,
 		\ 'minheight':&lines - 12,
 		\ 'maxheight': 15,
-		\ 'scrollbar': 1,
+		\ 'scrollbar': 0,
 		\ 'mapping': 0,
 		\ 'cursorline': 1,
 		\ 'filter': function('s:PopupFilter'),
 		\ }
 
 	const winid = popup_create(lines, opts)
+
+	call s:GetNextcursorline(winid, 1)
 endfunction
 
 "---------------------------------------------------------------
@@ -187,7 +189,7 @@ function! s:GetNextcursorline(winid, direction) abort
 	let idx = -1
 	while i > 0 && i <= line_count
 		let line = getbufline(bufnr, i)[0]
-		if line !~# '^\s*\d\+\s*' && !empty(line)
+		if line !~# '^\s*\d\+\s*' && line =~ '^\s\+.*' && !empty(line)
 			let idx = i
 			break
 		endif
@@ -226,6 +228,11 @@ function! s:PopupFilter(winid, key) abort
 		call s:UpdatePopup(a:winid)
 		return 1
 
+	elseif a:key ==# "e"		" マークの編集
+		call s:EditMark(a:winid)
+		call s:UpdatePopup(a:winid)
+		return 1
+
 	elseif a:key ==# "\<CR>"	" マーク位置にジャンプ
 		call s:Jump(a:winid)
 		return 1
@@ -235,7 +242,7 @@ function! s:PopupFilter(winid, key) abort
 endfunction
 
 "---------------------------------------------------------------
-" マーク追加
+" マークの追加
 "---------------------------------------------------------------
 function! s:AddMark() abort
 	" 現在行のマーク作成
@@ -243,6 +250,12 @@ function! s:AddMark() abort
 	let func = func#GetCurrentFunctionName()				" 関数名
 	let lnum = line('.')									" 行番号
 	let text = substitute(getline('.'), '\t', ' ', 'g')		" 関数名
+
+	" キーの存在確認をしてから同一箇所のマークがある場合はまず削除する
+	if has_key(s:Marks, file)
+		" ラムダ式を使い、lnum が一致「しない」ものだけを残す（＝一致するものを削除）
+		call filter(s:Marks[file], { idx, val -> val.lnum != lnum })
+	endif
 
 	" グループが無い場合は、作成する
 	if !has_key(s:Marks, file)
@@ -257,7 +270,7 @@ function! s:AddMark() abort
 endfunction
 
 "---------------------------------------------------------------
-" マーク削除
+" マークの削除
 "---------------------------------------------------------------
 function! s:DeleteMark(winid) abort
 	" 選択行から削除対象のファイル名と行番号を取得する
@@ -272,6 +285,37 @@ function! s:DeleteMark(winid) abort
 		if empty(s:Marks[target.file])
 			unlet s:Marks[target.file]
 		endif
+	endif
+
+	" マークファイルを保存
+	call s:SaveMarkFile(s:Marks)
+endfunction
+
+"---------------------------------------------------------------
+" マークの編集
+"---------------------------------------------------------------
+function! s:EditMark(winid) abort
+	" 選択行から編集対象のファイル名と行番号を取得する
+	let target = s:GetSelectMark(a:winid)
+
+	" 選択項目を取得
+	let v = (filter(deepcopy(s:Marks[target.file]), { idx, val -> val.lnum == target.lnum }))[0]
+	if empty(v) | return | endif
+
+	" 新しい関数名(タイトル)を入力
+	let v.func = input('Function name: ', v.func)
+	echo "\r"
+
+	" 空白が入力またはキャンセルされた場合は終了
+	if len(v.func) == 0 | return | endif
+
+	" キーの存在確認をしてから一旦削除してから登録し直す
+	if has_key(s:Marks, targeti.file)
+		" ラムダ式を使い、lnum が一致「しない」ものだけを残す（＝一致するものを削除）
+		call filter(s:Marks[target.file], { idx, val -> val.lnum != target.lnum })
+
+		" 新しく追加する
+		call add(s:Marks[target.file], v)
 	endif
 
 	" マークファイルを保存
