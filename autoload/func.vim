@@ -33,8 +33,11 @@ function! s:GetFuncName_C()
 			continue
 		endif
 
+		" 行末の空白とタブを削除
+		let s = substitute(s, '\s*$', '', '')
+
 		" (よりも前の文字列を抽出
-		let function = matchstr(line, '^[^(]*')
+		let function = matchstr(s, '^[^(]*')
 
 		" 最後から空白またはタブ文字が出てくるまでの文字列を抽出
 		let function = matchstr(function, '[^ \t]*$')
