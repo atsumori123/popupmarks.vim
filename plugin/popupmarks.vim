@@ -6,8 +6,8 @@ if exists('g:loaded_popupmarks')
 endif
 let g:loaded_popupmarks = 1
 
-command! PopupMarks call popupmarks#open()
-
+command! -nargs=? OpenMarks call popupmarks#open(<f-args>)
+command! -nargs=1 EditMarks call popupmarks#edit(<f-args>)
 
 let &cpoptions = s:save_cpo
 unlet s:save_cpo
