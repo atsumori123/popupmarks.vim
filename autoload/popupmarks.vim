@@ -300,8 +300,14 @@ function! s:Jump(winid) abort
 		call popup_close(a:winid)
 	endif
 
-	execute 'edit ' . fnameescape(m.file)
-	execute m.lnum
+	let winnum = bufwinnr('^' . m.file . '$')
+	if winnum != -1
+		exe winnum . 'wincmd w'
+		execute m.lnum
+	else
+		execute 'edit ' . fnameescape(m.file)
+		execute m.lnum
+	endif
 endfunction
 
 "---------------------------------------------------------------
@@ -394,7 +400,7 @@ endfunction
 "---------------------------------------------------------------
 function! s:OpenBuffer() abort
 	" Open a new window at the bottom
-	execute 'silent! vertical 40 split -marks-'
+	execute 'silent! botright vertical 40 split -marks-'
 	execute 'silent vertical resize 40'
 
 	setlocal buftype=nofile
@@ -426,8 +432,6 @@ function! s:OpenBuffer() abort
 	nnoremap <buffer> <silent> me :call <SID>EditMark(win_getid())<CR>
 	nnoremap <buffer> <silent> J :call <SID>MoveMark(win_getid(), 1)<CR>
 	nnoremap <buffer> <silent> K :call <SID>MoveMark(win_getid(), -1)<CR>
-	nnoremap <buffer> <silent> <Left> :vertical resize +2<CR>
-	nnoremap <buffer> <silent> <Right> :vertical resize -2<CR>
 	nnoremap <buffer> <silent> <CR> :call <SID>Jump(win_getid())<CR>
 
 	return win_getid()
