@@ -41,6 +41,27 @@ function! s:GetMarkWindow() abort
 endfunction
 
 "---------------------------------------------------------------
+" ファイル名と行番号から登録している一番近いマークの番号を返却する（ない場合は0を返却）
+"---------------------------------------------------------------
+function! s:GetMarkIndex(file, lnum) abort
+	let closest_index = -1
+	let closest_diff = -1
+
+	for i in range(len(s:Marks))
+		if a:file !=# s:Marks[i].file
+			continue
+		endif
+
+		let diff = abs(a:lnum - s:Marks[i].lnum)
+		if diff < closest_diff || closest_diff == -1
+			let closest_diff= diff
+			let closest_index = i
+		endif
+	endfor
+	return closest_index
+endfunction
+
+"---------------------------------------------------------------
 " バッファでマークを表示しているか
 "---------------------------------------------------------------
 function! s:IsBuffer() abort
@@ -187,7 +208,7 @@ function! s:UpdateCursorByLnum(winid, direction) abort
 
 	" 次のカーソル位置を設定
 	let index += a:direction
-	let index = min([max([0, index]), len(s:Marks) - 1])
+	let index = empty(s:Marks) ? 0 : min([max([0, index]), len(s:Marks) - 1])
 	call s:UpdateCursor(a:winid, index)
 endfunction
 
@@ -281,7 +302,6 @@ function! s:MoveMark(winid, direction) abort
 	" マークを保存
 	call s:SaveMarkFile()
 
-	echom "i=".i
 	" 表示とカーソルを更新
 	call s:UpdateText(a:winid)
 	call s:UpdateCursor(a:winid, i)
@@ -340,15 +360,15 @@ function! s:PopupFilter(winid, key) abort
 		call s:UpdateCursorByLnum(a:winid, -1)
 		return 1
 
-	elseif s:last_key ==# 'm' && a:key ==# 'a'	" マークの追加
+	elseif a:key ==# 'a'		" マークの追加
 		call s:AddMark(a:winid)
 		return 1
 
-	elseif s:last_key ==# 'm' && a:key ==# 'd'	" マークの削除
+	elseif a:key ==# 'd'		" マークの削除
 		call s:DeleteMark(a:winid)
 		return 1
 
-	elseif s:last_key ==# 'm' && a:key ==# 'e'	" マークの編集
+	elseif a:key ==# 'e'		" マークの編集
 		call s:EditMark(a:winid)
 		return 1
 
@@ -427,9 +447,9 @@ function! s:OpenBuffer() abort
 	nnoremap <buffer> <silent> q :close<CR>
 	nnoremap <buffer> <silent> j :call <SID>UpdateCursorByLnum(win_getid(), 1)<CR>
 	nnoremap <buffer> <silent> k :call <SID>UpdateCursorByLnum(win_getid(), -1)<CR>
-	nnoremap <buffer> <silent> ma :call <SID>AddMark(win_getid())<CR>
-	nnoremap <buffer> <silent> md :call <SID>DeleteMark(win_getid())<CR>
-	nnoremap <buffer> <silent> me :call <SID>EditMark(win_getid())<CR>
+	nnoremap <buffer> <silent> a :call <SID>AddMark(win_getid())<CR>
+	nnoremap <buffer> <silent> d :call <SID>DeleteMark(win_getid())<CR>
+	nnoremap <buffer> <silent> e :call <SID>EditMark(win_getid())<CR>
 	nnoremap <buffer> <silent> J :call <SID>MoveMark(win_getid(), 1)<CR>
 	nnoremap <buffer> <silent> K :call <SID>MoveMark(win_getid(), -1)<CR>
 	nnoremap <buffer> <silent> <CR> :call <SID>Jump(win_getid())<CR>
@@ -441,28 +461,37 @@ endfunction
 " マークの表示
 "---------------------------------------------------------------
 function! popupmarks#open(...) abort
-	" 既にマークバッファ開いている場合はフォーカスだけ移動させて終了
+	let arg = get(a:000, 0, "popup")
+	let file = expand('%:p')
+	let lnum = line('.')
+
 	let winnum = bufwinnr("-marks-")
 	if winnum != -1
+		" マークしているファイルを既に開いている場合は、そのウィンドウにフォーカスを移動させる
 		execute winnum.'wincmd w'
-		return
-	endif
+		let index = s:GetMarkIndex(file, lnum)
+		if index != -1
+			call s:UpdateCursor(s:MarkWinid, index)
+		endif
 
-	" 引数
-	let arg = get(a:000, 0, "popup")
-
-	" マークを読み込み
-	let s:Marks = s:LoadMarks()
-
-	" ウィンドウを作成(ポップアップorバッファ)
-	if arg == 'popup'
-		let s:popup_width = &columns - 20
-		let s:MarkWinid = s:OpenPopup()
 	else
-		let s:MarkWinid = s:OpenBuffer()
+		" マークを読み込み
+		let s:Marks = s:LoadMarks()
+
+		" ウィンドウを作成(ポップアップorバッファ)
+		if arg == 'popup'
+			let s:popup_width = &columns - 20
+			let s:MarkWinid = s:OpenPopup()
+		else
+			let s:MarkWinid = s:OpenBuffer()
+		endif
+
+		" 現在行と一番近いマークにカーソルを移動
+		let index = s:GetMarkIndex(file, lnum)
+		if index == -1 | let index = 0 | endif
+		call s:UpdateCursor(s:MarkWinid, index)
 	endif
 
-	call s:UpdateCursor(s:MarkWinid, 0)
 endfunction
 
 "---------------------------------------------------------------
