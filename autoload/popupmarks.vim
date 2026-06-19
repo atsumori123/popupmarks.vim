@@ -416,6 +416,23 @@ function! s:OpenPopup() abort
 endfunction
 
 "---------------------------------------------------------------
+" バッファ用のハイライト設定
+"---------------------------------------------------------------
+function! s:SetHighLightForBuffer(total_lnum)
+	syn match MarksFile '^[^ \t].*$'
+	syn match MarksLineNr '^\s*\zs\d\+'
+	hi! def link MarksFile String
+	hi! def link MarksLineNr Number
+
+	let lines = []
+	for i in range(2, a:total_lnum, 4) 
+		call add(lines, i)
+	endfor
+	let pattern = join(map(lines, {_, v -> '\%' . v . 'l'}), '\|')
+	execute 'match Function /' . pattern . '/'
+endfunction
+
+"---------------------------------------------------------------
 " バッファでマークを表示
 "---------------------------------------------------------------
 function! s:OpenBuffer() abort
@@ -436,12 +453,7 @@ function! s:OpenBuffer() abort
 	call s:SetTextToBuffer(s:BuildLinesForBuffer())
 
 	" set hightlight
-	syn match MarksFile '^[^ \t].*$'
-	syn match MarksFunc '^ \{4}\zs\S\+'
-	syn match MarksLineNr '^\s*\zs\d\+'
-	hi! def link MarksFile String
-	hi! def link MarksFunc Function
-	hi! def link MarksLineNr Number
+	call s:SetHighLightForBuffer(line('$'))
 
 	" set keymap
 	nnoremap <buffer> <silent> q :close<CR>
