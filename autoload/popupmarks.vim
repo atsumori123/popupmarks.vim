@@ -8,17 +8,6 @@ else
 	let s:markfile = expand('~/_vimmarks')
 endif
 
-" ハイライトグループを定義
-if empty(prop_type_get('MarkFile'))
-	call prop_type_add('MarkFile', {'highlight': 'String'})
-endif
-if empty(prop_type_get('MarkFunc'))
-	call prop_type_add('MarkFunc', {'highlight': 'function'})
-endif
-if empty(prop_type_get('MarkLine'))
-	call prop_type_add('MarkLine', {'highlight': 'Number'})
-endif
-
 " 複数キーによるコンビネーション用
 let s:last_key = ''
 " 前回打鍵したときの時間
@@ -59,21 +48,6 @@ function! s:GetMarkIndex(file, lnum) abort
 		endif
 	endfor
 	return closest_index
-endfunction
-
-"---------------------------------------------------------------
-" バッファでマークを表示しているか
-"---------------------------------------------------------------
-function! s:IsBuffer() abort
-	if win_id2win(s:MarkWinid) == 0
-		return 0
-	endif
-
-	if win_gettype(s:MarkWinid) ==# "popup"
-		return 0
-	endif
-
-	return 1
 endfunction
 
 "---------------------------------------------------------------
@@ -121,28 +95,6 @@ function! s:SaveMarkFile() abort
 endfunction
 
 "---------------------------------------------------------------
-" pupup表示形式に変換
-"---------------------------------------------------------------
-function! s:BuildLinesForPopup() abort
-	let lines = []
-
-	for m in s:Marks
-		" ファイル見出し行
-		let file = strcharpart(fnamemodify(m.file, ":t") . ' (' . m.file . ')', 0, s:popup_width)
-		call add(lines, {'text':file, 'props':[#{col: 1, length: len(file), type: "MarkFile"}]})
-		" 関数名
-		call add(lines, {'text':'    ' . m.func, 'props':[#{col: 5, length: len(m.func), type: "MarkFunc"}]})
-		" 行番号＋テキスト
-		let text = strcharpart(printf("    %-4s %s", m.lnum, m.text), 0, s:popup_width-45)
-		call add(lines, {'text':text, 'props':[#{col: 5, length: len(m.lnum), type: "MarkLine"}]})
-		" マーク間の空行
-		call add(lines, {'text':''})
-	endfor
-
-	return lines
-endfunction
-
-"---------------------------------------------------------------
 " バッファ表示形式に変換
 "---------------------------------------------------------------
 function! s:BuildLinesForBuffer() abort
@@ -184,11 +136,7 @@ endfunction
 " 表示の更新
 "---------------------------------------------------------------
 function! s:UpdateText(winid) abort
-	if s:IsBuffer()
-		call s:SetTextToBuffer(s:BuildLinesForBuffer())
-	else
-		call popup_settext(a:winid, s:BuildLinesForPopup())
-	endif
+	call s:SetTextToBuffer(s:BuildLinesForBuffer())
 endfunction
 
 "---------------------------------------------------------------
@@ -216,7 +164,7 @@ endfunction
 " マークの追加
 "---------------------------------------------------------------
 function! s:AddMark(winid) abort
-	if s:IsBuffer() | execute 'wincmd p' | endif
+	execute 'wincmd p'
 
 	let text = substitute(getline('.'), '\t', ' ', 'g')
 	let text = substitute(text, '\v^ +|\t', '', 'g')
@@ -228,7 +176,7 @@ function! s:AddMark(winid) abort
 	let m.func = func#GetCurrentFunctionName()		" 関数名
 	let m.text = text								" 関数名
 
-	if s:IsBuffer() | execute 'wincmd w' | endif
+	execute 'wincmd w'
 
 	" 同一箇所のマークが既に登録されている場合は一旦削除する
 	call filter(s:Marks, { idx, val -> val.file !=# m.file || val.lnum !=# m.lnum })
@@ -314,11 +262,7 @@ function! s:Jump(winid) abort
 	" 選択行のマークを取得
 	let [i, m]= s:GetSelectMark(a:winid)
 
-	if s:IsBuffer()
-		execute "wincmd p"
-	else
-		call popup_close(a:winid)
-	endif
+	execute "wincmd p"
 
 	let winnum = bufwinnr('^' . m.file . '$')
 	if winnum != -1
@@ -328,91 +272,6 @@ function! s:Jump(winid) abort
 		execute 'edit ' . fnameescape(m.file)
 		execute m.lnum
 	endif
-endfunction
-
-"---------------------------------------------------------------
-" ポップアップ内キー処理
-"---------------------------------------------------------------
-function! s:PopupFilter(winid, key) abort
-	let now = reltime()
-
-	" 前回の打鍵からの経過時間をミリ秒で計算
-	" reltimefloat は秒単位（小数）で返すため 1000 倍する
-	let elapsed = reltimefloat(reltime(s:last_time, l:now)) * 1000
-
-	" 設定値（timeoutlen）を超えていたらバッファをクリア
-	if elapsed > &timeoutlen
-		let s:last_key = ''
-	endif
-
-	" 今回の打鍵時刻を記録
-	let s:last_time = now
-
-	if a:key ==# 'q'			" 終了
-		call popup_close(a:winid, -1)
-		return 1
-
-	elseif a:key ==# 'j'		" 下移動
-		call s:UpdateCursorByLnum(a:winid, 1)
-		return 1
-
-	elseif a:key ==# 'k'		" 上移動
-		call s:UpdateCursorByLnum(a:winid, -1)
-		return 1
-
-	elseif a:key ==# 'a'		" マークの追加
-		call s:AddMark(a:winid)
-		return 1
-
-	elseif a:key ==# 'd'		" マークの削除
-		call s:DeleteMark(a:winid)
-		return 1
-
-	elseif a:key ==# 'e'		" マークの編集
-		call s:EditMark(a:winid)
-		return 1
-
-	elseif a:key ==# "J"		" マークを下に移動
-		call s:MoveMark(a:winid, 1)
-		return 1
-
-	elseif a:key ==# "K"		" マークを上に移動
-		call s:MoveMark(a:winid, -1)
-		return 1
-
-	elseif a:key ==# "\<CR>"	" マーク位置にジャンプ
-		call s:Jump(a:winid)
-		return 1
-	endif
-
-	let s:last_key = a:key	
-
-	return popup_filter_menu(a:winid, a:key)
-endfunction
-
-"---------------------------------------------------------------
-" ポップアップでマークを表示
-"---------------------------------------------------------------
-function! s:OpenPopup() abort
-	" popup 用の行を生成
-	let lines = s:BuildLinesForPopup()
-
-	let opts = {
-		\ 'title': ' Marks (Enter:Jump, ma:add, md:delete, me:edit, <S-k>:up, <S-j>:down) ',
-		\ 'border': [],
-		\ 'borderchars': has('gui') ? ['─','│','─','│','┌','┐','┘','└'] : [],
-		\ 'padding': [1,1,1,1],
-		\ 'minwidth': s:popup_width,
-		\ 'minheight': &lines - 10,
-		\ 'mmaxwidth': s:popup_width,
-		\ 'maxheight': &lines - 10,
-		\ 'scrollbar': 0,
-		\ 'mapping': 0,
-		\ 'cursorline': 1,
-		\ 'filter': function('s:PopupFilter'),
-		\ }
-
-	return popup_create(lines, opts)
 endfunction
 
 "---------------------------------------------------------------
@@ -433,12 +292,26 @@ function! s:SetHighLightForBuffer(total_lnum)
 endfunction
 
 "---------------------------------------------------------------
+" ウィンドウのリサイズ
+"---------------------------------------------------------------
+function! s:ResizeWindow(inout) abort
+	if a:inout
+		let size = float2nr(&columns * 2 / 3)
+	else
+		let size = 40
+	endif
+	let vertical = "vertical "
+	execute vertical."resize " . size
+endfunction
+
+"---------------------------------------------------------------
 " バッファでマークを表示
 "---------------------------------------------------------------
 function! s:OpenBuffer() abort
 	" Open a new window at the bottom
-	execute 'silent! botright vertical 40 split -marks-'
-	execute 'silent vertical resize 40'
+	let size = float2nr(&columns * 2 / 3)
+	execute 'silent! botright vertical ' . size . ' split -marks-'
+	execute 'silent vertical resize ' . size
 
 	setlocal buftype=nofile
 	setlocal noswapfile
@@ -466,14 +339,20 @@ function! s:OpenBuffer() abort
 	nnoremap <buffer> <silent> K :call <SID>MoveMark(win_getid(), -1)<CR>
 	nnoremap <buffer> <silent> <CR> :call <SID>Jump(win_getid())<CR>
 
+	" フォーカスがポップアップウィンドウにIN/OUTで発火
+	augroup PopupMarksInOut
+		autocmd! * <buffer>
+		autocmd WinLeave  <buffer> call <SID>ResizeWindow(0)
+		autocmd WinEnter  <buffer> call <SID>ResizeWindow(1)
+	augroup END
+
 	return win_getid()
 endfunction
 
 "---------------------------------------------------------------
 " マークの表示
 "---------------------------------------------------------------
-function! popupmarks#open(...) abort
-	let arg = get(a:000, 0, "popup")
+function! popupmarks#open() abort
 	let file = expand('%:p')
 	let lnum = line('.')
 
@@ -490,13 +369,8 @@ function! popupmarks#open(...) abort
 		" マークを読み込み
 		let s:Marks = s:LoadMarks()
 
-		" ウィンドウを作成(ポップアップorバッファ)
-		if arg == 'popup'
-			let s:popup_width = &columns - 20
-			let s:MarkWinid = s:OpenPopup()
-		else
-			let s:MarkWinid = s:OpenBuffer()
-		endif
+		" 表示
+		let s:MarkWinid = s:OpenBuffer()
 
 		" 現在行と一番近いマークにカーソルを移動
 		let index = s:GetMarkIndex(file, lnum)
