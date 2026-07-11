@@ -14,8 +14,8 @@ let s:last_key = ''
 let s:last_time = [0, 0] " [seconds, microseconds]
 " マークウィンドウID記憶用
 let s:MarkWinid = -1
-" ポップアップウィンドウの横幅
-let s:popup_width = &columns - 20
+" ウィンドウの横幅
+let s:mars_winsize = float2nr(&columns * 2 / 3)
 
 "---------------------------------------------------------------
 " マークウィンドウのウィンドウ番号とIDを返却する
@@ -296,12 +296,12 @@ endfunction
 "---------------------------------------------------------------
 function! s:ResizeWindow(inout) abort
 	if a:inout
-		let size = float2nr(&columns * 2 / 3)
+		let size = s:mars_winsize
 	else
+		let s:mars_winsize = getwininfo(win_getid())[0].width
 		let size = 40
 	endif
-	let vertical = "vertical "
-	execute vertical."resize " . size
+	execute "vertical resize " . size
 endfunction
 
 "---------------------------------------------------------------
@@ -310,8 +310,8 @@ endfunction
 function! s:OpenBuffer() abort
 	" Open a new window at the bottom
 	let size = float2nr(&columns * 2 / 3)
-	execute 'silent! botright vertical ' . size . ' split -marks-'
-	execute 'silent vertical resize ' . size
+	execute 'silent! botright vertical ' . s:mars_winsize . ' split -marks-'
+	execute 'silent vertical resize ' . s:mars_winsize
 
 	setlocal buftype=nofile
 	setlocal noswapfile
