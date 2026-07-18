@@ -8,10 +8,6 @@ else
 	let s:markfile = expand('~/_vimmarks')
 endif
 
-" 複数キーによるコンビネーション用
-let s:last_key = ''
-" 前回打鍵したときの時間
-let s:last_time = [0, 0] " [seconds, microseconds]
 " マークウィンドウID記憶用
 let s:MarkWinid = -1
 " ウィンドウの横幅
@@ -30,7 +26,7 @@ function! s:GetMarkWindow() abort
 endfunction
 
 "---------------------------------------------------------------
-" ファイル名と行番号から登録している一番近いマークの番号を返却する（ない場合は0を返却）
+" ファイル名と行番号から一番近いマークの番号を返す（ない場合は0を返却）
 "---------------------------------------------------------------
 function! s:GetMarkIndex(file, lnum) abort
 	let closest_index = -1
@@ -51,10 +47,10 @@ function! s:GetMarkIndex(file, lnum) abort
 endfunction
 
 "---------------------------------------------------------------
-" 選択行のマークを取得する
+" 選択行のマークを返す
 "---------------------------------------------------------------
-function! s:GetSelectMark(winid) abort
-	let i = (line('.', a:winid) - 1) / 4
+function! s:GetSelectMark() abort
+	let i = (line('.') - 1) / 4
 	return [i, s:Marks[i]]
 endfunction
 
@@ -71,8 +67,8 @@ function! s:LoadMarks() abort
 	for line in lines
 		" タブで分割して辞書型で登録
 	 	let parts = split(line, '\t')
-		if len(parts) >= 4
-			call add(marks, { 'file':parts[0], 'lnum':parts[1], 'func':parts[2], 'text':parts[3] })
+		if len(parts) >= 5
+			call add(marks, { 'file':parts[0], 'lnum':parts[1], 'func':parts[2], 'text':parts[3], 'depth':str2nr(parts[4]) })
 		endif
 	endfor
 
@@ -87,7 +83,7 @@ function! s:SaveMarkFile() abort
 
 	" 連想配列の各要素をタブ区切りのレコード形式に変換する
 	for m in s:Marks
-		call add(lines, m.file . "\t" . m.lnum . "\t" . m.func . "\t" . m.text)
+		call add(lines, m.file . "\t" . m.lnum . "\t" . m.func . "\t" . m.text . "\t" . m.depth)
 	endfor
 
 	" ファイル書き込み
@@ -99,65 +95,65 @@ endfunction
 "---------------------------------------------------------------
 function! s:BuildLinesForBuffer() abort
 	let lines = []
-
 	for m in s:Marks
+		let prefix = ""
+	    for i in range(m.depth)
+			let prefix .= "|  "
+		endfor
 		" ファイル見出し行
-		call add(lines, fnamemodify(m.file, ":t") . ' (' . m.file . ')')
+		call add(lines, prefix . "+- " . fnamemodify(m.file, ":t") . ' (' . m.file . ')')
 		" 関数名
-		call add(lines, '    ' . m.func)
+		call add(lines, prefix . "|  " . m.func)
 		" 行番号＋テキスト
-		call add(lines, '    ' . printf("%-4s  %s", m.lnum, m.text))
+		call add(lines, prefix . "|  " . printf("%-4s  %s", m.lnum, m.text))
 		" マーク間の空行
-		call add(lines, '')
+		call add(lines, prefix . "|  ")
 	endfor
 
 	return lines
 endfunction
 
 "---------------------------------------------------------------
-" 描画
+" 表示の更新
 "---------------------------------------------------------------
-function! s:SetTextToBuffer(lines) abort
+function! s:UpdateText() abort
+	" マークを表示形式に変換
+	let lines = s:BuildLinesForBuffer()
+
 	" 変更許可
 	setlocal modifiable
 
-	" 全行消去
 	silent! call deletebufline('%', 1, '$')
-
-	silent! 0put = a:lines
+	silent! 0put = lines
 	silent! $delete _
 	normal! gg
 
 	" 変更禁止
 	setlocal nomodifiable
-endfunction
 
-"---------------------------------------------------------------
-" 表示の更新
-"---------------------------------------------------------------
-function! s:UpdateText(winid) abort
-	call s:SetTextToBuffer(s:BuildLinesForBuffer())
+	" ハイライト
+	call s:SetHighLightForBuffer()
 endfunction
 
 "---------------------------------------------------------------
 " 行番号から次のカーソル位置を設定する
 "---------------------------------------------------------------
-function! s:UpdateCursor(winid, index) abort
+function! s:UpdateCursor(index) abort
 	let lnum = a:index * 4 + 1
-	call win_execute(a:winid, 'call cursor(' . lnum . ', 1)')
+	call execute('call cursor(' . lnum . ', 1)')
 	if &lines - 10 - 2 < lnum
-	 	call win_execute(a:winid, 'normal! jjkk')
+	 	call execute('normal! jjkk')
 	endif
 endfunction
 
-function! s:UpdateCursorByLnum(winid, direction) abort
+function! s:UpdateCursorByLnum(direction) abort
 	" 行番号からマーク番号に変換
-	let index = line('.', a:winid) / 4
+	let index = line('.') / 4
 
 	" 次のカーソル位置を設定
 	let index += a:direction
 	let index = empty(s:Marks) ? 0 : min([max([0, index]), len(s:Marks) - 1])
-	call s:UpdateCursor(a:winid, index)
+	call s:UpdateCursor(index)
 endfunction
 
 "---------------------------------------------------------------
@@ -175,6 +171,7 @@ function! s:AddMark(winid) abort
 	let m.lnum = line('.')							" 行番号
 	let m.func = func#GetCurrentFunctionName()		" 関数名
 	let m.text = text								" 関数名
+	let m.depth = 0									" 深さ
 
 	execute 'wincmd w'
 
@@ -188,16 +185,16 @@ function! s:AddMark(winid) abort
 	call s:SaveMarkFile()
 
 	" 表示とカーソルを更新
-	call s:UpdateText(a:winid)
-	call s:UpdateCursor(a:winid, len(s:Marks) - 1)
+	call s:UpdateText()
+	call s:UpdateCursor(len(s:Marks) - 1)
 endfunction
 
 "---------------------------------------------------------------
 " マークの削除
 "---------------------------------------------------------------
-function! s:DeleteMark(winid) abort
+function! s:DeleteMark() abort
 	" 選択行のマークを取得
-	let [i, m]= s:GetSelectMark(a:winid)
+	let [i, m]= s:GetSelectMark()
 
 	" 選択マークを削除
 	call remove(s:Marks, i)
@@ -206,16 +203,16 @@ function! s:DeleteMark(winid) abort
 	call s:SaveMarkFile()
 
 	" 表示とカーソルを更新
-	call s:UpdateText(a:winid)
-	call s:UpdateCursor(a:winid, max([0, i - 1]))
+	call s:UpdateText()
+	call s:UpdateCursor(max([0, i - 1]))
 endfunction
 
 "---------------------------------------------------------------
 " マークの編集
 "---------------------------------------------------------------
-function! s:EditMark(winid) abort
+function! s:EditMark() abort
 	" 選択行のマークを取得
-	let [i, m]= s:GetSelectMark(a:winid)
+	let [i, m]= s:GetSelectMark()
 
 	" 新しい名前を入力
 	let m.func = input('Function name: ', m.func)
@@ -231,16 +228,16 @@ function! s:EditMark(winid) abort
 	call s:SaveMarkFile()
 
 	" 表示とカーソルを更新
-	call s:UpdateText(a:winid)
-	call s:UpdateCursor(a:winid, i)
+	call s:UpdateText()
+	call s:UpdateCursor(i)
 endfunction
 
 "---------------------------------------------------------------
 " マークの移動
 "---------------------------------------------------------------
-function! s:MoveMark(winid, direction) abort
+function! s:Move(direction) abort
 	" 選択行のマークを取得
-	let [i, m]= s:GetSelectMark(a:winid)
+	let [i, m]= s:GetSelectMark()
 
 	" 選択マークを一旦リストから外して、新しい場所に登録し直す
 	let _ = remove(s:Marks, i)
@@ -251,16 +248,35 @@ function! s:MoveMark(winid, direction) abort
 	call s:SaveMarkFile()
 
 	" 表示とカーソルを更新
-	call s:UpdateText(a:winid)
-	call s:UpdateCursor(a:winid, i)
+	call s:UpdateText()
+	call s:UpdateCursor(i)
+endfunction
+
+"---------------------------------------------------------------
+" インデントの指定
+"---------------------------------------------------------------
+function! s:Depth(depth) abort
+	" 選択行のマークを取得
+	let [i, m]= s:GetSelectMark()
+
+	" 深さを増減
+	let n = m.depth + a:depth
+	let m.depth = n < 0 ? 0 : n
+
+	" マークを保存
+	call s:SaveMarkFile()
+
+	" 表示とカーソルを更新
+	call s:UpdateText()
+	call s:UpdateCursor(i)
 endfunction
 
 "---------------------------------------------------------------
 " ジャンプ
 "---------------------------------------------------------------
-function! s:Jump(winid) abort
+function! s:Jump() abort
 	" 選択行のマークを取得
-	let [i, m]= s:GetSelectMark(a:winid)
+	let [i, m]= s:GetSelectMark()
 
 	execute "wincmd p"
 
@@ -275,20 +291,38 @@ function! s:Jump(winid) abort
 endfunction
 
 "---------------------------------------------------------------
-" バッファ用のハイライト設定
+" ハイライト設定
 "---------------------------------------------------------------
-function! s:SetHighLightForBuffer(total_lnum)
-	syn match MarksFile '^[^ \t].*$'
-	syn match MarksLineNr '^\s*\zs\d\+'
-	hi! def link MarksFile String
-	hi! def link MarksLineNr Number
+function! s:SetHighLightForBuffer()
+	let lnum = line('$')
 
-	let lines = []
-	for i in range(2, a:total_lnum, 4) 
-		call add(lines, i)
+	" ハイライトを全クリア
+	call clearmatches()
+
+	" 表示要素がない場合は終了
+	if lnum < 3 | return | endif
+
+	" ファイル名(1,5,9,13...行目)をハイライト
+	let list = range(1, lnum, 4)
+	let pattern = join(map(list, {_, v -> '\%' . v . 'l'}), '\|')
+	call matchadd('String', pattern, -1)
+
+	" 関数名(2,6,10,14...行目)をハイライト
+	let list = range(2, lnum, 4)
+	let pattern = join(map(list, {_, v -> '\%' . v . 'l'}), '\|')
+	call matchadd('Function', pattern, -1)
+
+	" 行番号(3,7,11,15...行目)をハイライト
+	let list = []
+	for l in range(3, lnum, 4)
+		" テキストを取得して、数字が何文字目にあるか検索
+		let text = getline(l)
+		let col = match(text, '\d\+') + 1
+		let len = len(matchstr(text, '\d\+'))
+		call add(list, [l, col, len])
 	endfor
-	let pattern = join(map(lines, {_, v -> '\%' . v . 'l'}), '\|')
-	execute 'match Function /' . pattern . '/'
+	" matchaddpos で行、開始列、長さを指定してハイライト
+	call matchaddpos('Number', list)
 endfunction
 
 "---------------------------------------------------------------
@@ -323,21 +357,20 @@ function! s:OpenBuffer() abort
 	setlocal winfixheight winfixwidth
 
 	" 表示
-	call s:SetTextToBuffer(s:BuildLinesForBuffer())
-
-	" set hightlight
-	call s:SetHighLightForBuffer(line('$'))
+	call s:UpdateText()
 
 	" set keymap
 	nnoremap <buffer> <silent> q :close<CR>
-	nnoremap <buffer> <silent> j :call <SID>UpdateCursorByLnum(win_getid(), 1)<CR>
-	nnoremap <buffer> <silent> k :call <SID>UpdateCursorByLnum(win_getid(), -1)<CR>
-	nnoremap <buffer> <silent> a :call <SID>AddMark(win_getid())<CR>
-	nnoremap <buffer> <silent> d :call <SID>DeleteMark(win_getid())<CR>
-	nnoremap <buffer> <silent> e :call <SID>EditMark(win_getid())<CR>
-	nnoremap <buffer> <silent> J :call <SID>MoveMark(win_getid(), 1)<CR>
-	nnoremap <buffer> <silent> K :call <SID>MoveMark(win_getid(), -1)<CR>
-	nnoremap <buffer> <silent> <CR> :call <SID>Jump(win_getid())<CR>
+	nnoremap <buffer> <silent> j :call <SID>UpdateCursorByLnum(1)<CR>
+	nnoremap <buffer> <silent> k :call <SID>UpdateCursorByLnum(-1)<CR>
+	nnoremap <buffer> <silent> a :call <SID>AddMark()<CR>
+	nnoremap <buffer> <silent> d :call <SID>DeleteMark()<CR>
+	nnoremap <buffer> <silent> e :call <SID>EditMark()<CR>
+	nnoremap <buffer> <silent><c-j> :call <SID>Move(1)<CR>
+	nnoremap <buffer> <silent><c-k> :call <SID>Move(-1)<CR>
+	nnoremap <buffer> <silent><c-l> :call <SID>Depth(1)<CR>
+	nnoremap <buffer> <silent><c-h> :call <SID>Depth(-1)<CR>
+	nnoremap <buffer> <silent> <CR> :call <SID>Jump()<CR>
 
 	" フォーカスがポップアップウィンドウにIN/OUTで発火
 	augroup PopupMarksInOut
@@ -362,7 +395,7 @@ function! popupmarks#open() abort
 		execute winnum.'wincmd w'
 		let index = s:GetMarkIndex(file, lnum)
 		if index != -1
-			call s:UpdateCursor(s:MarkWinid, index)
+			call s:UpdateCursor(index)
 		endif
 
 	else
@@ -375,7 +408,7 @@ function! popupmarks#open() abort
 		" 現在行と一番近いマークにカーソルを移動
 		let index = s:GetMarkIndex(file, lnum)
 		if index == -1 | let index = 0 | endif
-		call s:UpdateCursor(s:MarkWinid, index)
+		call s:UpdateCursor(index)
 	endif
 
 endfunction
@@ -428,6 +461,7 @@ function! popupmarks#edit(arg) abort
 		let m.lnum = line('.')							" 行番号
 		let m.func = func#GetCurrentFunctionName()		" 関数名
 		let m.text = text								" 関数名
+		let m.depth = 0									" 深さ
 
 		" 同一箇所のマークが既に登録されている場合は一旦削除してから登録
 		call filter(s:Marks, { idx, val -> val.file !=# m.file || val.lnum !=# m.lnum })
@@ -441,7 +475,7 @@ function! popupmarks#edit(arg) abort
 	let [winnr, winid] = s:GetMarkWindow()
 	if winnr != -1
 		execute winnr.'wincmd w'
-		call s:UpdateText(winid)
+		call s:UpdateText()
 		execute 'wincmd p'
 	endif
 endfunction
