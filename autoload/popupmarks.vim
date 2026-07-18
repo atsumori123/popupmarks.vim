@@ -12,6 +12,8 @@ endif
 let s:MarkWinid = -1
 " ウィンドウの横幅
 let s:mars_winsize = float2nr(&columns * 2 / 3)
+" 表示行
+let s:old_lnum = 0
 
 "---------------------------------------------------------------
 " マークウィンドウのウィンドウ番号とIDを返却する
@@ -95,19 +97,41 @@ endfunction
 "---------------------------------------------------------------
 function! s:BuildLinesForBuffer() abort
 	let lines = []
-	for m in s:Marks
-		let prefix = ""
-	    for i in range(m.depth)
-			let prefix .= "|  "
-		endfor
-		" ファイル見出し行
-		call add(lines, prefix . "+- " . fnamemodify(m.file, ":t") . ' (' . m.file . ')')
-		" 関数名
-		call add(lines, prefix . "|  " . m.func)
-		" 行番号＋テキスト
-		call add(lines, prefix . "|  " . printf("%-4s  %s", m.lnum, m.text))
-		" マーク間の空行
-		call add(lines, prefix . "|  ")
+	let prefix = "   "
+	for i in range(len(s:Marks) - 1, 0, -1)
+		let m = s:Marks[i]
+
+		" 1つ前のプレフィックスとその長さ
+		let old_prefix  = prefix
+		let old_prefix_len = len(old_prefix)
+
+		" 現在のプレフィックスの長さ
+		let prefix_len  = 3 * (m.depth + 1)
+
+		if old_prefix_len < prefix_len
+			" 階層が深くなった（プレフィックスを長くする）
+			let prefix .= repeat(" ", prefix_len - old_prefix_len)
+		elseif old_prefix_len > prefix_len 
+			" 階層が浅くなった（プレフィックスを短くする）
+			let prefix = prefix[:prefix_len-1]
+		endif
+
+		call insert(lines, prefix[:-4] . "+- " . fnamemodify(m.file, ":t") . ' (' . m.file . ')', 0)
+		call insert(lines, prefix . m.func, 1)
+		call insert(lines, prefix . printf("%-4s  %s", m.lnum, m.text), 2)
+		call insert(lines, old_prefix . "", 3)
+
+		" 上位線
+		let n = 3 * m.depth
+		if n == 0
+			let head = ""
+			let tail = prefix[1:]
+		else
+			let head = prefix[:n-1]
+			let tail = prefix[n+1:]
+"			echo printf("n=%d, prefix=%s(%d), head=%s(%d), tail=%s(%d)", n, prefix, len(prefix), head, len(head), tail, len(tail))
+		endif
+		let prefix = head . '|' . tail
 	endfor
 
 	return lines
@@ -132,7 +156,10 @@ function! s:UpdateText() abort
 	setlocal nomodifiable
 
 	" ハイライト
-	call s:SetHighLightForBuffer()
+	if s:old_lnum != line('$')
+		call s:SetHighLightForBuffer()
+		let s:old_lnum = line('$')
+	endif
 endfunction
 
 "---------------------------------------------------------------
@@ -159,7 +186,7 @@ endfunction
 "---------------------------------------------------------------
 " マークの追加
 "---------------------------------------------------------------
-function! s:AddMark(winid) abort
+function! s:AddMark() abort
 	execute 'wincmd p'
 
 	let text = substitute(getline('.'), '\t', ' ', 'g')
