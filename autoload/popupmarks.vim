@@ -12,8 +12,6 @@ endif
 let s:MarkWinid = -1
 " ウィンドウの横幅
 let s:mars_winsize = float2nr(&columns * 2 / 3)
-" 表示行
-let s:old_lnum = 0
 
 "---------------------------------------------------------------
 " マークウィンドウのウィンドウ番号とIDを返却する
@@ -121,7 +119,7 @@ function! s:BuildLinesForBuffer() abort
 		call insert(lines, prefix . printf("%-4s  %s", m.lnum, m.text), 2)
 		call insert(lines, old_prefix . "", 3)
 
-		" 上位線
+		" 階層ツリー
 		let n = 3 * m.depth
 		if n == 0
 			let head = ""
@@ -129,7 +127,6 @@ function! s:BuildLinesForBuffer() abort
 		else
 			let head = prefix[:n-1]
 			let tail = prefix[n+1:]
-"			echo printf("n=%d, prefix=%s(%d), head=%s(%d), tail=%s(%d)", n, prefix, len(prefix), head, len(head), tail, len(tail))
 		endif
 		let prefix = head . '|' . tail
 	endfor
@@ -141,24 +138,17 @@ endfunction
 " 表示の更新
 "---------------------------------------------------------------
 function! s:UpdateText() abort
-	" マークを表示形式に変換
-	let lines = s:BuildLinesForBuffer()
+	let old_lnum = line('$')
 
-	" 変更許可
+	" 更新
 	setlocal modifiable
-
 	silent! call deletebufline('%', 1, '$')
-	silent! 0put = lines
-	silent! $delete _
-	normal! gg
-
-	" 変更禁止
+	silent! call setbufline('%', 1,  s:BuildLinesForBuffer())
 	setlocal nomodifiable
 
 	" ハイライト
-	if s:old_lnum != line('$')
+	if old_lnum != line('$')
 		call s:SetHighLightForBuffer()
-		let s:old_lnum = line('$')
 	endif
 endfunction
 
@@ -340,16 +330,9 @@ function! s:SetHighLightForBuffer()
 	call matchadd('Function', pattern, -1)
 
 	" 行番号(3,7,11,15...行目)をハイライト
-	let list = []
-	for l in range(3, lnum, 4)
-		" テキストを取得して、数字が何文字目にあるか検索
-		let text = getline(l)
-		let col = match(text, '\d\+') + 1
-		let len = len(matchstr(text, '\d\+'))
-		call add(list, [l, col, len])
-	endfor
-	" matchaddpos で行、開始列、長さを指定してハイライト
-	call matchaddpos('Number', list)
+	let list = range(3, lnum, 4)
+	let pattern = join(map(list, {_, v -> '\%' . v . 'l\%(^\s*\|\s*\)\@<=\d\+'}), '\|')
+	call matchadd('Number', pattern, -1)
 endfunction
 
 "---------------------------------------------------------------
@@ -375,6 +358,7 @@ function! s:OpenBuffer() abort
 	execute 'silent vertical resize ' . s:mars_winsize
 
 	setlocal buftype=nofile
+	setlocal bufhidden=wipe
 	setlocal noswapfile
 	setlocal nobuflisted
 	setlocal nowrap
@@ -488,7 +472,7 @@ function! popupmarks#edit(arg) abort
 		let m.lnum = line('.')							" 行番号
 		let m.func = func#GetCurrentFunctionName()		" 関数名
 		let m.text = text								" 関数名
-		let m.depth = 0									" 深さ
+		let m.depth = 0									" 階層
 
 		" 同一箇所のマークが既に登録されている場合は一旦削除してから登録
 		call filter(s:Marks, { idx, val -> val.file !=# m.file || val.lnum !=# m.lnum })
