@@ -321,12 +321,12 @@ function! s:SetHighLightForBuffer()
 
 	" ファイル名(1,5,9,13...行目)をハイライト
 	let list = range(1, lnum, 4)
-	let pattern = join(map(list, {_, v -> '\%' . v . 'l'}), '\|')
+	let pattern = join(map(list, {_, v -> '\%' . v . 'l[^\|+-\ ].*'}), '\|')
 	call matchadd('String', pattern, -1)
 
 	" 関数名(2,6,10,14...行目)をハイライト
 	let list = range(2, lnum, 4)
-	let pattern = join(map(list, {_, v -> '\%' . v . 'l'}), '\|')
+	let pattern = join(map(list, {_, v -> '\%' . v . 'l[^\|+-\ ].*'}), '\|')
 	call matchadd('Function', pattern, -1)
 
 	" 行番号(3,7,11,15...行目)をハイライト
